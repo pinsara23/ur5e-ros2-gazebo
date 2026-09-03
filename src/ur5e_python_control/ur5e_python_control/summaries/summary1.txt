@@ -1,0 +1,1421 @@
+ROS 2 JAZZY + GAZEBO + UR5e ROBOT ARM
+COMPLETE INSTALLATION, TESTING AND PYTHON CONTROL NOTES
+
+============================================================
+
+1. SYSTEM WE ARE USING
+   ============================================================
+
+Operating System:
+Ubuntu 24.04
+
+ROS 2:
+Jazzy
+
+Simulator:
+Gazebo Harmonic / Gazebo Sim 10.x
+
+Robot:
+Universal Robots UR5e
+
+Virtual machine:
+VirtualBox
+
+Workspace:
+~/robot_ws
+
+Custom ROS 2 Python package:
+ur5e_python_control
+
+============================================================
+2. ROS 2 DESKTOP INSTALLATION
+=============================
+
+IMPORTANT:
+The exact first ROS 2 repository/key commands from our original installation
+are not present in the conversation history I currently have, so I will not
+invent them.
+
+The Desktop package installation command we established was:
+
+sudo apt install ros-jazzy-desktop
+
+PURPOSE:
+Installs the main ROS 2 Jazzy Desktop environment, including commonly used
+ROS 2 tools, visualization tools and development packages.
+
+Update package information:
+
+sudo apt update
+
+PURPOSE:
+Downloads the latest package information from configured Ubuntu/ROS
+repositories.
+
+Install software-properties:
+
+sudo apt install software-properties-common
+
+PURPOSE:
+Provides tools such as add-apt-repository.
+
+Enable Ubuntu Universe repository:
+
+sudo add-apt-repository universe
+
+PURPOSE:
+Enables Ubuntu's Universe package repository, which contains many packages
+needed by ROS 2.
+
+Source ROS 2:
+
+source /opt/ros/jazzy/setup.bash
+
+PURPOSE:
+Adds ROS 2 Jazzy commands, libraries and environment variables to the
+current terminal.
+
+IMPORTANT:
+Every new terminal normally needs ROS 2 sourced unless it has been added
+to ~/.bashrc.
+
+Automatically source ROS 2 whenever a terminal opens:
+
+echo "source /opt/ros/jazzy/setup.bash" >> ~/.bashrc
+
+source ~/.bashrc
+
+PURPOSE:
+The first command adds ROS 2 Jazzy to the shell startup configuration.
+The second reloads the configuration immediately.
+
+============================================================
+3. CHECK ROS 2 INSTALLATION
+===========================
+
+Check ROS distribution:
+
+echo $ROS_DISTRO
+
+EXPECTED:
+
+jazzy
+
+PURPOSE:
+Shows which ROS 2 distribution is currently active.
+
+Find ros2 command:
+
+which ros2
+
+EXPECTED:
+
+/opt/ros/jazzy/bin/ros2
+
+PURPOSE:
+Shows which ROS 2 installation the terminal is using.
+
+Check installed ROS directories:
+
+ls /opt/ros/
+
+EXPECTED:
+
+jazzy
+
+PURPOSE:
+Shows installed ROS distributions.
+
+Check ros2 command:
+
+ros2 --version
+
+NOTE:
+ROS 2 CLI does not use this command in the same way as many programs.
+We saw:
+
+ros2: error: unrecognized arguments: --version
+
+This does NOT mean ROS 2 is broken.
+
+Run ROS diagnostic:
+
+ros2 doctor
+
+EXPECTED:
+
+All 5 checks passed
+
+PURPOSE:
+Checks the ROS 2 environment for common configuration problems.
+
+List installed ROS packages:
+
+ros2 pkg list
+
+PURPOSE:
+Displays all ROS 2 packages available in the current environment.
+
+Open RViz:
+
+rviz2
+
+PURPOSE:
+Starts RViz 2, ROS's visualization tool.
+
+We used this to verify that ROS 2 visualization was working.
+
+============================================================
+4. INSTALL ROS DEPENDENCIES
+===========================
+
+Update rosdep:
+
+rosdep update
+
+PURPOSE:
+Updates the ROS dependency database.
+
+rosdep is used to automatically identify/install dependencies required
+by ROS packages.
+
+============================================================
+5. GAZEBO INSTALLATION / TESTING
+================================
+
+Start Gazebo:
+
+gz sim
+
+PURPOSE:
+Starts Gazebo Sim.
+
+Gazebo is the physics simulation environment in which our UR5e exists.
+
+Check Gazebo version:
+
+gz sim --version
+
+We obtained a Gazebo Sim 10.x version.
+
+PURPOSE:
+Confirms that Gazebo Sim is installed and available.
+
+============================================================
+6. INSTALL ROS-GAZEBO INTEGRATION
+=================================
+
+Install ros_gz:
+
+sudo apt install -y ros-jazzy-ros-gz
+
+PURPOSE:
+Installs ROS 2 ↔ Gazebo integration packages.
+
+These allow ROS 2 nodes/topics/interfaces to communicate with Gazebo.
+
+Check ros_gz packages:
+
+ros2 pkg list | grep ros_gz
+
+EXPECTED PACKAGES INCLUDED:
+
+ros_gz
+ros_gz_bridge
+ros_gz_image
+ros_gz_interfaces
+ros_gz_sim
+ros_gz_sim_demos
+
+PURPOSE:
+Confirms that ROS-Gazebo integration packages are installed.
+
+============================================================
+7. CHECK ros2_control
+=====================
+
+Check ros2_control packages:
+
+ros2 pkg list | grep ros2_control
+
+PURPOSE:
+Checks whether ros2_control packages are installed.
+
+ros2_control is responsible for connecting ROS commands to robot joints
+through controllers.
+
+Check controller_manager:
+
+ros2 pkg list | grep controller_manager
+
+PURPOSE:
+Checks that the ROS 2 controller manager packages are installed.
+
+controller_manager manages robot controllers.
+
+============================================================
+8. CONTROLLER TYPES TEST
+========================
+
+We tried:
+
+ros2 control list_controller_types
+
+At that time it waited for:
+
+/controller_manager/list_controller_types
+
+and could not contact the service.
+
+WHY?
+
+Because a robot/controller_manager was not running yet.
+
+This command becomes useful after starting the robot simulation.
+
+============================================================
+9. CHECK MOVEIT 2
+=================
+
+Check MoveIt packages:
+
+ros2 pkg list | grep moveit
+
+PURPOSE:
+Confirms that MoveIt 2 is installed.
+
+MoveIt will later allow us to command the robot using higher-level goals
+such as:
+
+* joint targets
+* end-effector poses
+* XYZ positions
+* motion planning
+* collision avoidance
+
+============================================================
+10. INSTALL UR5e SIMULATION
+===========================
+
+Install Universal Robots simulation:
+
+sudo apt install -y ros-jazzy-ur-simulation-gz
+
+PURPOSE:
+Installs the Universal Robots Gazebo simulation package.
+
+It provides simulated UR robots, including the UR5e.
+
+Check where the package is installed:
+
+ros2 pkg prefix ur_simulation_gz
+
+EXPECTED:
+
+/opt/ros/jazzy
+
+PURPOSE:
+Shows the installation location of the UR simulation package.
+
+============================================================
+11. START THE UR5e SIMULATION
+=============================
+
+Launch UR5e:
+
+ros2 launch ur_simulation_gz ur_sim_control.launch.py ur_type:=ur5e
+
+PURPOSE:
+Starts the UR5e simulation.
+
+This launches the components required for:
+
+* UR5e robot description
+* Gazebo
+* robot_state_publisher
+* ros2_control
+* controllers
+* joint states
+* ROS-Gazebo communication
+* visualization components
+
+IMPORTANT:
+Keep this terminal running.
+
+We use another terminal for commands that communicate with the robot.
+
+============================================================
+12. SOURCE ROS 2 IN THE SECOND TERMINAL
+=======================================
+
+source /opt/ros/jazzy/setup.bash
+
+PURPOSE:
+Makes ROS 2 Jazzy commands available in the second terminal.
+
+============================================================
+13. CHECK ACTIVE CONTROLLERS
+============================
+
+ros2 control list_controllers
+
+Our working result included:
+
+scaled_joint_trajectory_controller
+ur_controllers/ScaledJointTrajectoryController
+active
+
+joint_state_broadcaster
+joint_state_broadcaster/JointStateBroadcaster
+active
+
+PURPOSE:
+Shows which robot controllers are running.
+
+The important controller for our Python program is:
+
+scaled_joint_trajectory_controller
+
+It accepts FollowJointTrajectory action goals.
+
+============================================================
+14. CHECK CONTROLLER UPDATE RATE
+================================
+
+List controller manager parameters:
+
+ros2 param list /controller_manager
+
+PURPOSE:
+Shows parameters belonging to controller_manager.
+
+Check update rate:
+
+ros2 param get /controller_manager update_rate
+
+Result:
+
+Integer value is: 500
+
+PURPOSE:
+Shows that the controller manager is configured to update at 500 Hz.
+
+============================================================
+15. CHECK ROS 2 SERVICES
+========================
+
+ros2 service list
+
+PURPOSE:
+Shows available ROS 2 services.
+
+We used this to confirm controller_manager services such as:
+
+* load_controller
+* switch_controller
+* list_controllers
+
+etc.
+
+============================================================
+16. CHECK ROS TOPICS
+====================
+
+ros2 topic list
+
+PURPOSE:
+Shows all currently available ROS 2 topics.
+
+Topics allow ROS nodes to publish/receive continuous streams of information.
+
+============================================================
+17. READ ROBOT JOINT STATES
+===========================
+
+ros2 topic echo /joint_states --once
+
+PURPOSE:
+Displays one message from the robot's joint state topic.
+
+We saw joints including:
+
+elbow_joint
+shoulder_lift_joint
+shoulder_pan_joint
+wrist_1_joint
+wrist_2_joint
+wrist_3_joint
+
+The message contains:
+
+position
+velocity
+effort
+
+PURPOSE:
+This allows us to see the robot's current joint state.
+
+============================================================
+18. CHECK ROS 2 ACTIONS
+=======================
+
+ros2 action list
+
+PURPOSE:
+Shows active ROS 2 actions.
+
+We found:
+
+/scaled_joint_trajectory_controller/follow_joint_trajectory
+
+Check the action:
+
+ros2 action info /scaled_joint_trajectory_controller/follow_joint_trajectory
+
+PURPOSE:
+Shows information about the action server/client.
+
+We confirmed that:
+
+scaled_joint_trajectory_controller
+
+is providing the FollowJointTrajectory action server.
+
+============================================================
+19. FIRST DIRECT ROBOT MOVEMENT TEST
+====================================
+
+We tested the controller directly from the terminal:
+
+ros2 action send_goal 
+/scaled_joint_trajectory_controller/follow_joint_trajectory 
+control_msgs/action/FollowJointTrajectory 
+"{trajectory: {joint_names: ['shoulder_pan_joint', 'shoulder_lift_joint', 'elbow_joint', 'wrist_1_joint', 'wrist_2_joint', 'wrist_3_joint'], points: [{positions: [0.3, -1.57, 0.0, -1.57, 0.0, 0.0], time_from_start: {sec: 3, nanosec: 0}}]}}"
+
+RESULT:
+
+Goal accepted
+
+error_code: 0
+
+Goal successfully reached
+
+status: SUCCEEDED
+
+WHAT THIS PROVED:
+
+ROS 2
+↓
+controller
+↓
+UR5e simulation
+
+was working correctly.
+
+This was an important test because we knew the problem was not Gazebo,
+ros2_control or the UR5e controller anymore.
+
+============================================================
+20. CREATE ROS 2 WORKSPACE
+==========================
+
+Create workspace source directory:
+
+mkdir -p ~/robot_ws/src
+
+PURPOSE:
+Creates our ROS 2 workspace and source directory.
+
+The workspace is:
+
+~/robot_ws
+
+Go into source directory:
+
+cd ~/robot_ws/src
+
+PURPOSE:
+Moves the terminal into the location where ROS packages are created.
+
+============================================================
+21. CREATE OUR PYTHON ROS 2 PACKAGE
+===================================
+
+ros2 pkg create --build-type ament_python ur5e_python_control --dependencies rclpy control_msgs trajectory_msgs
+
+PURPOSE:
+Creates a new Python ROS 2 package called:
+
+ur5e_python_control
+
+Dependencies:
+
+rclpy
+ROS 2 Python client library.
+
+control_msgs
+Provides FollowJointTrajectory action definitions.
+
+trajectory_msgs
+Provides JointTrajectoryPoint messages.
+
+Package structure:
+
+ur5e_python_control/
+package.xml
+setup.py
+ur5e_python_control/
+**init**.py
+
+============================================================
+22. BUILD THE WORKSPACE
+=======================
+
+cd ~/robot_ws
+
+PURPOSE:
+Moves to the workspace root.
+
+Build:
+
+colcon build
+
+PURPOSE:
+Compiles/builds all packages inside the workspace.
+
+NOTE:
+
+I accidentally typed:
+
+colocn build
+
+This produced:
+
+command not found
+
+Correct command:
+
+colcon build
+
+============================================================
+23. SOURCE OUR WORKSPACE
+========================
+
+source ~/robot_ws/install/setup.bash
+
+PURPOSE:
+Makes packages built in our workspace available to ROS 2.
+
+After building a package, source the workspace before trying to use it.
+
+============================================================
+24. CREATE PYTHON PROGRAM
+=========================
+
+Go to Python package directory:
+
+cd ~/robot_ws/src/ur5e_python_control/ur5e_python_control
+
+PURPOSE:
+Moves to the directory containing our Python ROS 2 nodes.
+
+Create Python file:
+
+touch move_ur5e.py
+
+PURPOSE:
+Creates an empty Python file.
+
+Open it in VS Code:
+
+code move_ur5e.py
+
+PURPOSE:
+Opens the Python source file in VS Code.
+
+============================================================
+25. FIRST ATTEMPT TO RUN PYTHON NODE
+====================================
+
+ros2 run ur5e_python_control move_ur5e
+
+We got:
+
+No executable found
+
+WHY?
+
+ROS 2 did not yet know that move_ur5e.py should be installed as a
+ROS 2 executable.
+
+We therefore had to modify setup.py.
+
+============================================================
+26. CONFIGURE setup.py
+======================
+
+Go to package directory:
+
+cd ~/robot_ws/src/ur5e_python_control
+
+Open setup.py:
+
+code setup.py
+
+Inside setup.py we added:
+
+entry_points={
+'console_scripts': [
+'move_ur5e = ur5e_python_control.move_ur5e:main',
+],
+},
+
+WHAT THIS MEANS:
+
+move_ur5e
+
+```
+This becomes the ROS 2 executable name.
+```
+
+ur5e_python_control.move_ur5e
+
+```
+Python module containing the program.
+```
+
+:main
+
+```
+Tells ROS 2 to execute the main() function.
+```
+
+Therefore:
+
+ros2 run ur5e_python_control move_ur5e
+
+will execute:
+
+ur5e_python_control/move_ur5e.py
+
+and call:
+
+main()
+
+============================================================
+27. REBUILD AFTER CHANGING setup.py
+===================================
+
+cd ~/robot_ws
+
+colcon build
+
+PURPOSE:
+Rebuilds the package so ROS 2 recognizes the new executable configuration.
+
+Source the newly built workspace:
+
+source install/setup.bash
+
+PURPOSE:
+Loads the newly built package into the current terminal.
+
+============================================================
+28. CHECK ROS 2 EXECUTABLE
+==========================
+
+ros2 pkg executables ur5e_python_control
+
+RESULT:
+
+ur5e_python_control move_ur5e
+
+PURPOSE:
+Confirms that ROS 2 now recognizes our Python program as an executable.
+
+============================================================
+29. SOURCE BOTH ROS 2 AND OUR WORKSPACE
+=======================================
+
+source /opt/ros/jazzy/setup.bash
+
+source ~/robot_ws/install/setup.bash
+
+PURPOSE:
+
+First command:
+Loads ROS 2 Jazzy.
+
+Second command:
+Loads our custom workspace.
+
+Both are needed when using our custom ROS 2 package.
+
+============================================================
+30. RUN OUR OWN PYTHON ROBOT CONTROLLER
+=======================================
+
+ros2 run ur5e_python_control move_ur5e
+
+Our program successfully produced output similar to:
+
+UR5e Controller Node has been started.
+Waiting for action server...
+Controller connected
+Sending goal...
+Goal accepted
+Goal succeeded!
+
+IMPORTANT RESULT:
+
+OUR OWN PYTHON ROS 2 PROGRAM SUCCESSFULLY CONTROLLED THE SIMULATED UR5e.
+
+This means Stage 1 is COMPLETE.
+
+============================================================
+31. PYTHON CODE WE USED
+=======================
+
+The program conceptually used the following code:
+
+import rclpy
+from rclpy.node import Node
+from rclpy.action import ActionClient
+
+from control_msgs.action import FollowJointTrajectory
+from trajectory_msgs.msg import JointTrajectoryPoint
+
+class UR5eController(Node):
+
+```
+def __init__(self):
+    super().__init__('ur5e_controller')
+
+    self._action_client = ActionClient(
+        self,
+        FollowJointTrajectory,
+        '/scaled_joint_trajectory_controller/follow_joint_trajectory'
+    )
+
+    self.get_logger().info('UR5e controller started')
+
+
+def move_robot(self):
+
+    self.get_logger().info(
+        'Waiting for UR5e controller...'
+    )
+
+    self._action_client.wait_for_server()
+
+    self.get_logger().info(
+        'Controller connected!'
+    )
+
+
+    goal = FollowJointTrajectory.Goal()
+
+
+    goal.trajectory.joint_names = [
+        'shoulder_pan_joint',
+        'shoulder_lift_joint',
+        'elbow_joint',
+        'wrist_1_joint',
+        'wrist_2_joint',
+        'wrist_3_joint'
+    ]
+
+
+    point = JointTrajectoryPoint()
+
+    point.positions = [
+        0.3,
+        -1.57,
+        0.0,
+        -1.57,
+        0.0,
+        0.0
+    ]
+
+    point.time_from_start.sec = 3
+
+
+    goal.trajectory.points.append(point)
+
+
+    self.get_logger().info(
+        'Sending trajectory to UR5e...'
+    )
+
+
+    future = self._action_client.send_goal_async(goal)
+
+    rclpy.spin_until_future_complete(
+        self,
+        future
+    )
+
+
+    goal_handle = future.result()
+
+
+    if not goal_handle.accepted:
+
+        self.get_logger().error(
+            'Goal was rejected!'
+        )
+
+        return
+
+
+    self.get_logger().info(
+        'Goal accepted!'
+    )
+
+
+    result_future = goal_handle.get_result_async()
+
+    rclpy.spin_until_future_complete(
+        self,
+        result_future
+    )
+
+
+    result = result_future.result().result
+
+
+    if result.error_code == 0:
+
+        self.get_logger().info(
+            'UR5e reached the target position!'
+        )
+
+    else:
+
+        self.get_logger().error(
+            f'Movement failed: {result.error_string}'
+        )
+```
+
+def main(args=None):
+
+```
+rclpy.init(args=args)
+
+robot = UR5eController()
+
+robot.move_robot()
+
+robot.destroy_node()
+
+rclpy.shutdown()
+```
+
+if **name** == '**main**':
+main()
+
+============================================================
+32. WHAT EACH IMPORTANT PYTHON PART DOES
+========================================
+
+import rclpy
+
+PURPOSE:
+Python interface for ROS 2.
+
+from rclpy.node import Node
+
+PURPOSE:
+Allows our Python class to become a ROS 2 node.
+
+from rclpy.action import ActionClient
+
+PURPOSE:
+Allows our program to communicate with a ROS 2 action server.
+
+from control_msgs.action import FollowJointTrajectory
+
+PURPOSE:
+Defines the action used to send joint trajectories to the robot controller.
+
+from trajectory_msgs.msg import JointTrajectoryPoint
+
+PURPOSE:
+Represents one point in a robot joint trajectory.
+
+class UR5eController(Node):
+
+PURPOSE:
+Creates our own ROS 2 node.
+
+super().**init**('ur5e_controller')
+
+PURPOSE:
+Gives the ROS 2 node the name:
+
+ur5e_controller
+
+ActionClient(...)
+
+PURPOSE:
+Creates a client that can communicate with:
+
+/scaled_joint_trajectory_controller/follow_joint_trajectory
+
+wait_for_server()
+
+PURPOSE:
+Waits until the robot's action server is available.
+
+FollowJointTrajectory.Goal()
+
+PURPOSE:
+Creates the goal that will be sent to the robot controller.
+
+goal.trajectory.joint_names
+
+PURPOSE:
+Defines which robot joints the trajectory controls.
+
+The order is extremely important:
+
+1. shoulder_pan_joint
+2. shoulder_lift_joint
+3. elbow_joint
+4. wrist_1_joint
+5. wrist_2_joint
+6. wrist_3_joint
+
+point.positions
+
+PURPOSE:
+Defines the desired angle of every joint.
+
+Example:
+
+[
+0.3,
+-1.57,
+0.0,
+-1.57,
+0.0,
+0.0
+]
+
+Each value corresponds to the joint in the same position in
+joint_names.
+
+point.time_from_start.sec = 3
+
+PURPOSE:
+Says that the robot should reach this trajectory point at 3 seconds.
+
+goal.trajectory.points.append(point)
+
+PURPOSE:
+Adds the trajectory point to the trajectory.
+
+send_goal_async()
+
+PURPOSE:
+Sends the trajectory goal to the controller.
+
+rclpy.spin_until_future_complete()
+
+PURPOSE:
+Waits for the asynchronous ROS 2 operation to finish.
+
+goal_handle.accepted
+
+PURPOSE:
+Checks whether the controller accepted the goal.
+
+get_result_async()
+
+PURPOSE:
+Requests the final result from the action server.
+
+result.error_code
+
+PURPOSE:
+Tells us whether the trajectory succeeded or failed.
+
+0 means success.
+
+rclpy.init()
+
+PURPOSE:
+Starts the ROS 2 Python system.
+
+robot.destroy_node()
+
+PURPOSE:
+Cleans up our ROS 2 node.
+
+rclpy.shutdown()
+
+PURPOSE:
+Shuts down the ROS 2 Python system.
+
+============================================================
+33. THE COMPLETE ARCHITECTURE
+=============================
+
+Our system works like this:
+
+YOUR PYTHON PROGRAM
+|
+| FollowJointTrajectory action
+v
+ROS 2 ACTION SERVER
+|
+v
+scaled_joint_trajectory_controller
+|
+v
+ros2_control
+|
+v
+SIMULATED UR5e JOINTS
+|
+v
+GAZEBO
+
+And robot feedback travels approximately like:
+
+UR5e simulation
+|
+v
+joint_state_broadcaster
+|
+v
+/joint_states
+|
+v
+ROS 2 nodes / our programs
+
+IMPORTANT:
+
+Our Python program does NOT directly move the Gazebo model.
+
+Instead:
+
+Python
+-> ROS 2 action
+-> robot controller
+-> ros2_control
+-> simulated robot
+
+============================================================
+34. COMMANDS TO START THE PROJECT AGAIN
+=======================================
+
+TERMINAL 1:
+
+source /opt/ros/jazzy/setup.bash
+
+source ~/robot_ws/install/setup.bash
+
+ros2 launch ur_simulation_gz ur_sim_control.launch.py ur_type:=ur5e
+
+TERMINAL 2:
+
+source /opt/ros/jazzy/setup.bash
+
+source ~/robot_ws/install/setup.bash
+
+ros2 control list_controllers
+
+Expected:
+
+scaled_joint_trajectory_controller ... active
+joint_state_broadcaster ... active
+
+Then run our Python controller:
+
+ros2 run ur5e_python_control move_ur5e
+
+============================================================
+35. USEFUL DEBUGGING COMMANDS
+=============================
+
+Check ROS distribution:
+
+echo $ROS_DISTRO
+
+Check ROS installation:
+
+which ros2
+
+Check ROS packages:
+
+ros2 pkg list
+
+Check controllers:
+
+ros2 control list_controllers
+
+Check controller manager parameters:
+
+ros2 param list /controller_manager
+
+Check update rate:
+
+ros2 param get /controller_manager update_rate
+
+Check services:
+
+ros2 service list
+
+Check topics:
+
+ros2 topic list
+
+Read joint states:
+
+ros2 topic echo /joint_states --once
+
+Check actions:
+
+ros2 action list
+
+Check specific action:
+
+ros2 action info /scaled_joint_trajectory_controller/follow_joint_trajectory
+
+Check our package executable:
+
+ros2 pkg executables ur5e_python_control
+
+Rebuild workspace:
+
+cd ~/robot_ws
+colcon build
+
+Source workspace:
+
+source ~/robot_ws/install/setup.bash
+
+============================================================
+36. COMMON ERROR WE ENCOUNTERED
+===============================
+
+ERROR:
+
+ros2 run ur5e_python_control move_ur5e
+
+No executable found
+
+CAUSE:
+
+The Python file existed, but setup.py did not contain the console_scripts
+entry point.
+
+SOLUTION:
+
+Add:
+
+entry_points={
+'console_scripts': [
+'move_ur5e = ur5e_python_control.move_ur5e:main',
+],
+},
+
+Then:
+
+cd ~/robot_ws
+
+colcon build
+
+source install/setup.bash
+
+============================================================
+37. IMPORTANT COMMAND ORDER
+===========================
+
+When working on the project, remember:
+
+1. Start ROS 2 environment:
+
+source /opt/ros/jazzy/setup.bash
+
+2. Start workspace:
+
+source ~/robot_ws/install/setup.bash
+
+3. Start simulation:
+
+ros2 launch ur_simulation_gz ur_sim_control.launch.py ur_type:=ur5e
+
+4. In another terminal, source again:
+
+source /opt/ros/jazzy/setup.bash
+source ~/robot_ws/install/setup.bash
+
+5. Check controller:
+
+ros2 control list_controllers
+
+6. Run our Python controller:
+
+ros2 run ur5e_python_control move_ur5e
+
+============================================================
+38. WHAT WE HAVE COMPLETED
+==========================
+
+[COMPLETED]
+
+Ubuntu 24.04
+|
+v
+ROS 2 Jazzy
+|
+v
+Gazebo
+|
+v
+ros_gz
+|
+v
+ros2_control
+|
+v
+UR5e simulation
+|
+v
+UR5e controller
+|
+v
+FollowJointTrajectory
+|
+v
+Our own Python ROS 2 package
+|
+v
+SUCCESSFUL UR5e MOVEMENT
+
+============================================================
+39. NEXT LEARNING STAGES
+========================
+
+STAGE 1 - COMPLETE
+
+One joint-position target using Python.
+
+STAGE 2 - NEXT
+
+Multiple joint positions / waypoints.
+
+We will learn:
+
+JointTrajectoryPoint
+multiple points
+time_from_start
+trajectory interpolation
+moving through several positions
+returning to the starting position
+
+STAGE 3
+
+User-controlled parameters.
+
+For example:
+
+ros2 run ... --ros-args -p ...
+
+STAGE 4
+
+MoveIt 2 Python.
+
+We will move from directly controlling the trajectory controller to
+higher-level motion planning.
+
+STAGE 5
+
+End-effector / XYZ targets.
+
+Instead of saying:
+
+"move joint 1 to this angle"
+
+we can eventually say:
+
+"move the robot's end effector to this position."
+
+STAGE 6
+
+Pick-and-place simulation.
+
+STAGE 7
+
+Camera + computer vision / AI.
+
+Eventually:
+
+Camera
+|
+v
+Computer vision / AI
+|
+v
+Object location
+|
+v
+MoveIt 2
+|
+v
+UR5e
+|
+v
+Pick object
+
+============================================================
+40. MOST IMPORTANT THING TO REMEMBER
+====================================
+
+The project is NOT just about memorizing commands.
+
+The main architecture to understand is:
+
+ROS 2
+= communication framework
+
+Gazebo
+= physics/simulation
+
+UR5e
+= simulated robot
+
+ros2_control
+= robot control framework
+
+Controller
+= converts trajectory commands into joint control
+
+FollowJointTrajectory
+= action interface used to send trajectories
+
+rclpy
+= Python interface to ROS 2
+
+MoveIt 2
+= higher-level motion planning system
+
+Our current Python program is therefore:
+
+Python
+↓
+rclpy
+↓
+FollowJointTrajectory action
+↓
+scaled_joint_trajectory_controller
+↓
+ros2_control
+↓
+UR5e
+↓
+Gazebo
+
+# END OF CURRENT STAGE

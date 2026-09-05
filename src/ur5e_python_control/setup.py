@@ -24,7 +24,7 @@ setup(
     },
     entry_points={
     'console_scripts': [
-        'move_ur5e = ur5e_python_control.move_ur5e:main',
+        'move_ur5e_multiple_points = ur5e_python_control.move_ur5e_multiple_points:main',
     ],
 },
 )

@@ -25,6 +25,7 @@ setup(
     entry_points={
     'console_scripts': [
         'move_ur5e_multiple_points = ur5e_python_control.move_ur5e_multiple_points:main',
+        'joint_state_listener_combine_with_movements = ur5e_python_control.joint_state_listener_combine_with_movements:main',
     ],
 },
 )

@@ -1,0 +1,1897 @@
+# Stage 4 — MoveIt 2 Motion Planning with UR5e
+
+## Stage 4 Goal
+
+The goal of Stage 4 was to move from manually commanding the UR5e controller to using **MoveIt 2 for motion planning**.
+
+Before Stage 4, our architecture was mainly:
+
+```text
+Python program
+    ↓
+FollowJointTrajectory action
+    ↓
+scaled_joint_trajectory_controller
+    ↓
+ros2_control
+    ↓
+UR5e in Gazebo
+```
+
+We manually created joint positions, waypoints, and timing.
+
+In Stage 4 we changed the architecture to:
+
+```text
+Python program
+    ↓
+MoveItPy
+    ↓
+MoveIt 2
+    ↓
+OMPL motion planner
+    ↓
+RobotTrajectory
+    ↓
+Trajectory Execution Manager
+    ↓
+scaled_joint_trajectory_controller
+    ↓
+ros2_control
+    ↓
+UR5e in Gazebo
+```
+
+---
+
+# 4.1 MoveIt 2 Concepts
+
+We learned that MoveIt 2 is a motion-planning framework for ROS 2.
+
+MoveIt does not directly replace `ros2_control`.
+
+Instead:
+
+```text
+MoveIt decides HOW the robot should move.
+
+ros2_control performs the actual joint motion.
+```
+
+Main concepts learned:
+
+* Robot Model
+* Robot State
+* Planning Group
+* Planning Scene
+* Motion Planning
+* Planning Pipeline
+* OMPL
+* Collision Checking
+* RobotTrajectory
+* Trajectory Execution Manager
+* Controller selection
+* Planning vs Execution
+
+---
+
+# 4.2 Direct Controller vs MoveIt
+
+Previously, in Stage 2:
+
+```text
+We chose:
+- joint positions
+- waypoints
+- trajectory timing
+```
+
+Example:
+
+```python
+point.positions = [
+    0.5,
+    -1.2,
+    -0.5,
+    -1.3,
+    0.2,
+    0.0
+]
+
+point.time_from_start.sec = 4
+```
+
+We manually told the robot how to move.
+
+With MoveIt:
+
+```text
+We provide:
+START STATE
++
+GOAL STATE
+
+MoveIt calculates:
+- intermediate states
+- collision-free path
+- timing
+- trajectory
+```
+
+---
+
+# 4.3 Starting the UR5e Simulation
+
+The UR5e Gazebo simulation was launched with:
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source ~/robot_ws/install/setup.bash
+
+ros2 launch ur_simulation_gz ur_sim_control.launch.py ur_type:=ur5e
+```
+
+The important active controller was:
+
+```text
+scaled_joint_trajectory_controller
+```
+
+Its action interface is:
+
+```text
+/scaled_joint_trajectory_controller/follow_joint_trajectory
+```
+
+---
+
+# 4.4 Checking MoveIt Installation
+
+We checked installed MoveIt packages:
+
+```bash
+ros2 pkg list | grep moveit
+```
+
+Important packages included:
+
+```text
+moveit
+moveit_core
+moveit_msgs
+moveit_ros
+moveit_ros_move_group
+moveit_ros_planning
+moveit_ros_planning_interface
+moveit_simple_controller_manager
+ur_moveit_config
+```
+
+---
+
+# 4.5 Finding the UR MoveIt Launch File
+
+We checked the UR MoveIt package:
+
+```bash
+ros2 pkg prefix ur_moveit_config
+```
+
+Result:
+
+```text
+/opt/ros/jazzy
+```
+
+Then:
+
+```bash
+ls /opt/ros/jazzy/share/ur_moveit_config/launch
+```
+
+We found:
+
+```text
+ur_moveit.launch.py
+```
+
+---
+
+# 4.6 Missing UR Robot Driver
+
+Our first MoveIt launch failed because:
+
+```text
+package 'ur_robot_driver' not found
+```
+
+We checked whether the package was available:
+
+```bash
+apt policy ros-jazzy-ur-robot-driver
+```
+
+Then installed it:
+
+```bash
+sudo apt install ros-jazzy-ur-robot-driver
+```
+
+Verified:
+
+```bash
+ros2 pkg list | grep ur_robot_driver
+```
+
+Result:
+
+```text
+ur_robot_driver
+```
+
+We also checked the executable required by the launch file:
+
+```bash
+ros2 pkg executables ur_robot_driver | grep wait
+```
+
+Result:
+
+```text
+ur_robot_driver wait_for_robot_description
+```
+
+---
+
+# 4.7 Launching MoveIt
+
+After the UR5e Gazebo simulation was running, we launched MoveIt:
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source ~/robot_ws/install/setup.bash
+
+ros2 launch ur_moveit_config ur_moveit.launch.py \
+    ur_type:=ur5e \
+    use_sim_time:=true
+```
+
+Important successful messages included:
+
+```text
+MoveGroup context initialization complete
+You can start planning now!
+```
+
+RViz also reported:
+
+```text
+Ready to take commands for planning group ur_manipulator
+```
+
+MoveIt recognized:
+
+```text
+Planning Group:
+ur_manipulator
+```
+
+It loaded several planners:
+
+```text
+OMPL
+CHOMP
+STOMP
+Pilz Industrial Motion Planner
+```
+
+It also detected:
+
+```text
+scaled_joint_trajectory_controller
+joint_trajectory_controller
+```
+
+---
+
+# 4.8 Installing the MoveIt Python Interface
+
+Initially:
+
+```bash
+python3 -c "import moveit; print(moveit)"
+```
+
+failed with:
+
+```text
+ModuleNotFoundError
+```
+
+We searched for the Python package:
+
+```bash
+apt-cache search ros-jazzy-moveit | grep -E "python|py"
+```
+
+We found:
+
+```text
+ros-jazzy-moveit-py
+```
+
+Installed it:
+
+```bash
+sudo apt install ros-jazzy-moveit-py
+```
+
+Verified:
+
+```bash
+ros2 pkg list | grep moveit_py
+```
+
+Result:
+
+```text
+moveit_py
+```
+
+Then:
+
+```bash
+python3 -c "import moveit; print(moveit)"
+```
+
+successfully loaded the Python module.
+
+---
+
+# 4.9 Creating the MoveItPy Configuration
+
+The UR MoveIt package contains:
+
+```text
+/opt/ros/jazzy/share/ur_moveit_config
+```
+
+Its config files include:
+
+```text
+config/
+    chomp_planning.yaml
+    joint_limits.yaml
+    kinematics.yaml
+    moveit_controllers.yaml
+    ompl_planning.yaml
+    pilz_cartesian_limits.yaml
+```
+
+The SRDF files are:
+
+```text
+srdf/
+    ur_macro.srdf.xacro
+    ur.srdf.xacro
+```
+
+Our Python configuration became:
+
+```python
+from pathlib import Path
+
+from moveit_configs_utils import MoveItConfigsBuilder
+from moveit.planning import MoveItPy
+
+moveit_config = (
+    MoveItConfigsBuilder(
+        robot_name="ur",
+        package_name="ur_moveit_config"
+    )
+    .robot_description_semantic(
+        Path("srdf") / "ur.srdf.xacro",
+        {"name": "ur5e"}
+    )
+    .planning_pipelines(
+        pipelines=["ompl"],
+        default_planning_pipeline="ompl"
+    )
+    .to_moveit_configs()
+)
+
+config_dict = moveit_config.to_dict()
+
+config_dict["planning_pipelines"] = {
+    "pipeline_names": ["ompl"]
+}
+
+config_dict["use_sim_time"] = True
+```
+
+Then we created MoveItPy:
+
+```python
+moveit = MoveItPy(
+    node_name="moveit_state_test",
+    config_dict=config_dict
+)
+```
+
+---
+
+# 4.10 Why `use_sim_time=True` Was Required
+
+At first MoveItPy reported:
+
+```text
+Didn't receive robot state with recent timestamp
+```
+
+Gazebo was using simulation time while the Python node was using normal system time.
+
+We fixed it with:
+
+```python
+config_dict["use_sim_time"] = True
+```
+
+After that, MoveIt could correctly receive `/joint_states`.
+
+---
+
+# 4.11 Creating a Planning Component
+
+We obtained the UR5e MoveIt planning group:
+
+```python
+ur5e = moveit.get_planning_component(
+    "ur_manipulator"
+)
+```
+
+This represents the MoveIt planning group containing the UR5e arm joints.
+
+Conceptually:
+
+```text
+MoveItPy
+   ↓
+PlanningComponent
+   ↓
+ur_manipulator
+   ↓
+UR5e arm joints
+```
+
+---
+
+# 4.12 Reading the Current Robot State
+
+First we gave MoveIt time to receive joint-state data:
+
+```python
+import time
+
+time.sleep(1.0)
+```
+
+Then:
+
+```python
+ur5e.set_start_state_to_current_state()
+```
+
+Retrieved the state:
+
+```python
+current_state = ur5e.get_start_state()
+```
+
+Printed it:
+
+```python
+print("\n========== CURRENT MOVEIT START STATE ==========")
+print(current_state)
+```
+
+We then read the UR5e joint positions:
+
+```python
+joint_positions = current_state.get_joint_group_positions(
+    "ur_manipulator"
+)
+
+print("\n========== CURRENT JOINT POSITIONS ==========")
+print(joint_positions)
+```
+
+Typical result:
+
+```text
+[ 0.0
+ -1.57
+  0.0
+ -1.57
+  0.0
+  0.0 ]
+```
+
+Actual result contained tiny floating-point differences:
+
+```text
+[ 1.00955184e-07
+ -1.56999996e+00
+ -6.48755497e-08
+ -1.56999979e+00
+ -1.10509470e-07
+ -1.89553967e-07 ]
+```
+
+These are effectively:
+
+```text
+[0, -1.57, 0, -1.57, 0, 0]
+```
+
+---
+
+# 4.13 Verifying `/joint_states`
+
+We compared the MoveIt state with ROS directly:
+
+```bash
+ros2 topic echo /joint_states --once
+```
+
+Example:
+
+```text
+name:
+- elbow_joint
+- shoulder_lift_joint
+- shoulder_pan_joint
+- wrist_1_joint
+- wrist_2_joint
+- wrist_3_joint
+
+position:
+- ~0.0
+- -1.57
+- ~0.0
+- -1.57
+- ~0.0
+- ~0.0
+```
+
+This confirmed:
+
+```text
+Gazebo
+   ↓
+ros2_control
+   ↓
+/joint_states
+   ↓
+MoveIt
+   ↓
+RobotState
+```
+
+---
+
+# 4.14 Creating a Joint-Space Goal
+
+We selected:
+
+```python
+goal_positions = [
+    0.3,
+    -1.3,
+    -0.3,
+    -1.4,
+    0.2,
+    0.0
+]
+
+print("\n========== GOAL JOINT POSITIONS ==========")
+print(goal_positions)
+```
+
+---
+
+# 4.15 Creating a Separate Goal RobotState
+
+We must not do:
+
+```python
+goal_state = current_state
+```
+
+because that makes both variables point to the same object.
+
+We used:
+
+```python
+import copy
+
+goal_state = copy.copy(current_state)
+```
+
+Then changed only the goal:
+
+```python
+goal_state.set_joint_group_positions(
+    "ur_manipulator",
+    goal_positions
+)
+```
+
+And gave it to MoveIt:
+
+```python
+ur5e.set_goal_state(
+    robot_state=goal_state
+)
+```
+
+Verification:
+
+```python
+print("\n========== GOAL STATE SET IN MOVEIT ==========")
+
+print(
+    goal_state.get_joint_group_positions(
+        "ur_manipulator"
+    )
+)
+```
+
+Result:
+
+```text
+[ 0.3 -1.3 -0.3 -1.4 0.2 0.0 ]
+```
+
+---
+
+# 4.16 Configuring the Planner
+
+We imported:
+
+```python
+from moveit.planning import (
+    MoveItPy,
+    PlanRequestParameters
+)
+```
+
+The Jazzy API required two arguments:
+
+```python
+plan_parameters = PlanRequestParameters(
+    moveit,
+    "plan_request_params"
+)
+```
+
+Then configured:
+
+```python
+plan_parameters.planning_pipeline = "ompl"
+
+plan_parameters.planner_id = \
+    "RRTConnectkConfigDefault"
+
+plan_parameters.planning_time = 5.0
+
+plan_parameters.planning_attempts = 1
+
+plan_parameters.max_velocity_scaling_factor = 0.5
+
+plan_parameters.max_acceleration_scaling_factor = 0.5
+```
+
+Important distinction:
+
+```text
+planning_pipeline = "ompl"
+```
+
+selects the OMPL planning system.
+
+While:
+
+```text
+planner_id = "RRTConnectkConfigDefault"
+```
+
+selects RRTConnect inside OMPL.
+
+Conceptually:
+
+```text
+MoveIt
+   ↓
+OMPL
+   ↓
+RRTConnect
+```
+
+---
+
+# 4.17 Planning Without Execution
+
+We planned:
+
+```python
+print("\n========== PLANNING ==========")
+
+plan_result = ur5e.plan(
+    single_plan_parameters=plan_parameters
+)
+```
+
+Then:
+
+```python
+if plan_result:
+    print("Planning succeeded!")
+else:
+    print("Planning failed!")
+```
+
+Successful output:
+
+```text
+Planning succeeded!
+```
+
+At this point the robot did not move.
+
+Architecture:
+
+```text
+START
+ ↓
+OMPL
+ ↓
+collision checking
+ ↓
+path search
+ ↓
+trajectory generation
+ ↓
+STOP
+```
+
+---
+
+# 4.18 Getting the Generated RobotTrajectory
+
+When planning succeeded:
+
+```python
+trajectory = plan_result.trajectory
+```
+
+The object was:
+
+```text
+moveit.core.robot_trajectory.RobotTrajectory
+```
+
+This contained the motion generated by MoveIt.
+
+---
+
+# 4.19 Inspecting Trajectory Information
+
+We printed:
+
+```python
+print("\n========== TRAJECTORY INFORMATION ==========")
+
+print(
+    "Number of waypoints:",
+    len(trajectory)
+)
+
+print(
+    "Total trajectory duration:",
+    trajectory.duration
+)
+```
+
+Then:
+
+```python
+durations = trajectory.get_waypoint_durations()
+
+print("\nWaypoint durations:")
+print(durations)
+```
+
+Result:
+
+```text
+Number of waypoints: 8
+
+Total trajectory duration:
+0.6928202485292532
+```
+
+Durations:
+
+```text
+[
+0.0,
+0.1,
+0.1,
+0.1,
+0.1,
+0.1,
+0.1,
+0.09282
+]
+```
+
+---
+
+# 4.20 Inspecting Every Waypoint
+
+We used:
+
+```python
+print("\n========== TRAJECTORY WAYPOINTS ==========")
+
+for i in range(len(trajectory)):
+
+    waypoint = trajectory[i]
+
+    positions = waypoint.get_joint_group_positions(
+        "ur_manipulator"
+    )
+
+    print(f"\nWaypoint {i}:")
+    print(positions)
+```
+
+MoveIt generated 8 states.
+
+Waypoint 0 was approximately:
+
+```text
+[0, -1.57, 0, -1.57, 0, 0]
+```
+
+The final waypoint was:
+
+```text
+[0.3, -1.3, -0.3, -1.4, 0.2, 0]
+```
+
+MoveIt automatically generated all the intermediate states.
+
+This demonstrated:
+
+```text
+START
+ ↓
+intermediate state
+ ↓
+intermediate state
+ ↓
+...
+ ↓
+GOAL
+```
+
+---
+
+# 4.21 Path vs Trajectory
+
+We learned an important distinction.
+
+A path describes:
+
+```text
+Where should the robot pass?
+```
+
+A trajectory describes:
+
+```text
+Where should the robot pass
++
+when should it reach those states?
+```
+
+Conceptually:
+
+```text
+Geometric path
+     ↓
+Time parameterization
+     ↓
+Trajectory
+```
+
+The MoveIt log showed:
+
+```text
+Calling Planner 'OMPL'
+```
+
+then:
+
+```text
+Calling PlanningResponseAdapter
+'AddTimeOptimalParameterization'
+```
+
+and:
+
+```text
+ValidateSolution
+```
+
+---
+
+# 4.22 Executing the Planned Trajectory
+
+After planning worked, we finally executed:
+
+```python
+print("\n========== EXECUTING TRAJECTORY ==========")
+
+execution_result = moveit.execute(
+    trajectory,
+    controllers=[]
+)
+
+print("\n========== EXECUTION RESULT ==========")
+print(execution_result)
+```
+
+`controllers=[]` means MoveIt automatically selects an appropriate configured controller.
+
+It does not mean that no controller is used.
+
+---
+
+# 4.23 Successful Controller Handoff
+
+Important output:
+
+```text
+sending trajectory to
+scaled_joint_trajectory_controller
+```
+
+Then:
+
+```text
+scaled_joint_trajectory_controller
+started execution
+```
+
+Then:
+
+```text
+Goal request accepted!
+```
+
+Finally:
+
+```text
+Controller 'scaled_joint_trajectory_controller'
+successfully finished
+```
+
+and:
+
+```text
+Completed trajectory execution
+with status SUCCEEDED
+```
+
+The UR5e visibly moved in Gazebo.
+
+This confirmed the full architecture:
+
+```text
+Our Python
+   ↓
+MoveItPy
+   ↓
+OMPL
+   ↓
+RobotTrajectory
+   ↓
+Trajectory Execution Manager
+   ↓
+scaled_joint_trajectory_controller
+   ↓
+ros2_control
+   ↓
+Gazebo
+   ↓
+UR5e
+```
+
+---
+
+# 4.24 Trajectory Start-State Validation
+
+Before execution, MoveIt reported:
+
+```text
+Validating trajectory with
+allowed_start_tolerance 0.01
+```
+
+This means MoveIt checks whether the real robot state is close enough to the state from which the trajectory was planned.
+
+This prevents execution of a trajectory whose expected start no longer matches the actual robot.
+
+---
+
+# 4.25 Planning Scene
+
+Next we learned about the Planning Scene.
+
+The Planning Scene represents:
+
+```text
+Robot
++
+Environment
++
+Collision information
+```
+
+It may contain:
+
+```text
+tables
+boxes
+walls
+shelves
+other objects
+```
+
+---
+
+# 4.26 Planning Scene ROS Interfaces
+
+We checked:
+
+```bash
+ros2 topic list | grep planning_scene
+```
+
+Result:
+
+```text
+/monitored_planning_scene
+/planning_scene
+/planning_scene_world
+```
+
+Then:
+
+```bash
+ros2 service list | grep planning_scene
+```
+
+Result:
+
+```text
+/apply_planning_scene
+/get_planning_scene
+```
+
+This proved the MoveIt Planning Scene system was active.
+
+---
+
+# 4.27 Getting the Planning Scene Monitor in Python
+
+We created:
+
+```python
+planning_scene_monitor = \
+    moveit.get_planning_scene_monitor()
+```
+
+This allows our Python program to access and modify MoveIt's scene.
+
+---
+
+# 4.28 Adding a Collision Object
+
+Imports:
+
+```python
+from moveit_msgs.msg import CollisionObject
+from shape_msgs.msg import SolidPrimitive
+from geometry_msgs.msg import Pose
+```
+
+Created the object:
+
+```python
+collision_object = CollisionObject()
+
+collision_object.header.frame_id = "base_link"
+collision_object.id = "test_box"
+```
+
+Created box geometry:
+
+```python
+box = SolidPrimitive()
+
+box.type = SolidPrimitive.BOX
+
+box.dimensions = [
+    0.20,
+    0.20,
+    0.20
+]
+```
+
+Created its pose:
+
+```python
+box_pose = Pose()
+
+box_pose.position.x = 0.50
+box_pose.position.y = 0.50
+box_pose.position.z = 0.50
+
+box_pose.orientation.w = 1.0
+```
+
+Connected geometry and pose:
+
+```python
+collision_object.primitives.append(box)
+
+collision_object.primitive_poses.append(
+    box_pose
+)
+
+collision_object.operation = CollisionObject.ADD
+```
+
+Added it to MoveIt:
+
+```python
+with planning_scene_monitor.read_write() as scene:
+
+    scene.apply_collision_object(
+        collision_object
+    )
+
+    scene.current_state.update()
+```
+
+Output:
+
+```text
+Collision object added!
+```
+
+---
+
+# 4.29 Meaning of `base_link`
+
+This:
+
+```python
+collision_object.header.frame_id = "base_link"
+```
+
+means that the object's X, Y, and Z coordinates are interpreted relative to the UR5e base coordinate frame.
+
+Example:
+
+```python
+x = 0.5
+y = 0.5
+z = 0.5
+```
+
+means:
+
+```text
+0.5 m in X
+0.5 m in Y
+0.5 m in Z
+```
+
+relative to `base_link`.
+
+---
+
+# 4.30 Direct Collision Check
+
+We queried the Planning Scene directly:
+
+```python
+with planning_scene_monitor.read_only() as scene:
+
+    current_state = scene.current_state
+
+    collision_result = scene.is_state_colliding(
+        robot_state=current_state,
+        joint_model_group_name="ur_manipulator"
+    )
+
+    print("\n========== COLLISION CHECK ==========")
+
+    print(
+        "Is current robot state colliding?",
+        collision_result
+    )
+```
+
+With the box away from the robot:
+
+```text
+Is current robot state colliding? False
+```
+
+---
+
+# 4.31 Creating an Intentional Collision
+
+We moved the box close to the robot base:
+
+```python
+box_pose.position.x = 0.0
+box_pose.position.y = 0.0
+box_pose.position.z = 0.10
+```
+
+The same collision test then returned:
+
+```text
+Is current robot state colliding? True
+```
+
+This demonstrated:
+
+```text
+same RobotState
++
+different Planning Scene
+↓
+state validity changes
+```
+
+---
+
+# 4.32 Collision-Aware Planning Experiment
+
+Next we created a larger obstacle:
+
+```python
+box.dimensions = [
+    0.10,
+    0.60,
+    0.60
+]
+```
+
+Position:
+
+```python
+box_pose.position.x = 0.45
+box_pose.position.y = 0.0
+box_pose.position.z = 0.35
+```
+
+This acted more like a wall.
+
+We selected a new joint-space goal:
+
+```python
+goal_positions = [
+    -0.5,
+    -1.1,
+    -0.6,
+    -1.3,
+    0.3,
+    0.0
+]
+```
+
+---
+
+# 4.33 Checking Start and Goal Collision
+
+We checked both endpoints:
+
+```python
+with planning_scene_monitor.read_only() as scene:
+
+    start_collision = scene.is_state_colliding(
+        robot_state=current_state,
+        joint_model_group_name="ur_manipulator"
+    )
+
+    goal_collision = scene.is_state_colliding(
+        robot_state=goal_state,
+        joint_model_group_name="ur_manipulator"
+    )
+
+    print(
+        "\n========== ENDPOINT COLLISION CHECK =========="
+    )
+
+    print(
+        "Start state colliding?",
+        start_collision
+    )
+
+    print(
+        "Goal state colliding?",
+        goal_collision
+    )
+```
+
+Result:
+
+```text
+Start state colliding? False
+Goal state colliding? False
+```
+
+---
+
+# 4.34 Collision-Aware OMPL Planning
+
+We then planned again:
+
+```python
+plan_result = ur5e.plan(
+    single_plan_parameters=plan_parameters
+)
+```
+
+Result:
+
+```text
+Planning succeeded!
+```
+
+This means MoveIt found a valid path while considering the obstacle.
+
+Conceptually:
+
+```text
+OMPL generates candidate RobotState
+             ↓
+      MoveIt collision checker
+          ↙          ↘
+      collision      valid
+         ↓             ↓
+      reject          keep
+```
+
+MoveIt continues searching until it finds a sequence of valid states from start to goal.
+
+---
+
+# 4.35 Why MoveIt Is More Powerful Than Direct Joint Control
+
+Direct controller approach:
+
+```text
+Python
+ ↓
+JointTrajectory
+ ↓
+controller
+ ↓
+robot
+```
+
+The controller mainly knows:
+
+```text
+Move these joints according to this trajectory.
+```
+
+It does not independently understand a box, wall, table, or shelf.
+
+MoveIt adds:
+
+```text
+Robot model
++
+Planning scene
++
+collision checking
++
+motion planner
++
+trajectory generation
+```
+
+So the complete architecture becomes:
+
+```text
+High-level goal
+      ↓
+MoveIt
+      ↓
+Robot model
++
+Planning scene
+      ↓
+OMPL
+      ↓
+Collision-free trajectory
+      ↓
+Trajectory Execution Manager
+      ↓
+ros2_control controller
+      ↓
+robot
+```
+
+---
+
+# 4.36 Important Warnings Seen During Stage 4
+
+We repeatedly saw:
+
+```text
+Parameter 'plan_request_params.plan_request_params...'
+not found
+```
+
+and:
+
+```text
+Cannot find planning configuration for group
+'ur_manipulator'
+using planner 'RRTConnectkConfigDefault'.
+Will use defaults instead.
+```
+
+Planning still succeeded and MoveIt reported:
+
+```text
+Planner configuration 'ur_manipulator'
+will use planner 'geometric::RRTConnect'
+```
+
+So these warnings were not blockers.
+
+We decided not to spend time cleaning them yet because the planner was working correctly.
+
+---
+
+# 4.37 MoveItPy Shutdown Segmentation Fault
+
+At the end of our standalone Python scripts we repeatedly saw:
+
+```text
+Deleting MoveItCpp
+Segmentation fault (core dumped)
+```
+
+This happened during shutdown.
+
+Importantly, it occurred only after:
+
+```text
+planning succeeded
+```
+
+or after:
+
+```text
+trajectory execution status SUCCEEDED
+```
+
+Therefore it did not prevent:
+
+```text
+RobotState reading
+planning
+trajectory generation
+controller execution
+```
+
+It appears to be a cleanup/destruction issue in our current MoveItPy/Jazzy environment.
+
+We decided not to let it block the learning process.
+
+---
+
+# 4.38 Final Stage 4 Python Structure
+
+The important pieces of our program now look conceptually like this:
+
+```python
+import time
+import copy
+
+from pathlib import Path
+
+from moveit_configs_utils import MoveItConfigsBuilder
+
+from moveit.planning import (
+    MoveItPy,
+    PlanRequestParameters
+)
+
+from moveit_msgs.msg import CollisionObject
+from shape_msgs.msg import SolidPrimitive
+from geometry_msgs.msg import Pose
+```
+
+Build config:
+
+```python
+moveit_config = (
+    MoveItConfigsBuilder(
+        robot_name="ur",
+        package_name="ur_moveit_config"
+    )
+    .robot_description_semantic(
+        Path("srdf") / "ur.srdf.xacro",
+        {"name": "ur5e"}
+    )
+    .planning_pipelines(
+        pipelines=["ompl"],
+        default_planning_pipeline="ompl"
+    )
+    .to_moveit_configs()
+)
+
+config_dict = moveit_config.to_dict()
+
+config_dict["planning_pipelines"] = {
+    "pipeline_names": ["ompl"]
+}
+
+config_dict["use_sim_time"] = True
+```
+
+Create MoveIt:
+
+```python
+moveit = MoveItPy(
+    node_name="moveit_state_test",
+    config_dict=config_dict
+)
+```
+
+Create planning component:
+
+```python
+ur5e = moveit.get_planning_component(
+    "ur_manipulator"
+)
+```
+
+Wait for joint states:
+
+```python
+time.sleep(1.0)
+```
+
+Read current state:
+
+```python
+ur5e.set_start_state_to_current_state()
+
+current_state = ur5e.get_start_state()
+```
+
+Read joint positions:
+
+```python
+current_positions = \
+    current_state.get_joint_group_positions(
+        "ur_manipulator"
+    )
+```
+
+Create goal:
+
+```python
+goal_positions = [
+    0.3,
+    -1.3,
+    -0.3,
+    -1.4,
+    0.2,
+    0.0
+]
+```
+
+Copy RobotState:
+
+```python
+goal_state = copy.copy(current_state)
+```
+
+Set goal joints:
+
+```python
+goal_state.set_joint_group_positions(
+    "ur_manipulator",
+    goal_positions
+)
+```
+
+Tell MoveIt the goal:
+
+```python
+ur5e.set_goal_state(
+    robot_state=goal_state
+)
+```
+
+Planner configuration:
+
+```python
+plan_parameters = PlanRequestParameters(
+    moveit,
+    "plan_request_params"
+)
+
+plan_parameters.planning_pipeline = "ompl"
+
+plan_parameters.planner_id = \
+    "RRTConnectkConfigDefault"
+
+plan_parameters.planning_time = 5.0
+
+plan_parameters.planning_attempts = 1
+
+plan_parameters.max_velocity_scaling_factor = 0.5
+
+plan_parameters.max_acceleration_scaling_factor = 0.5
+```
+
+Plan:
+
+```python
+plan_result = ur5e.plan(
+    single_plan_parameters=plan_parameters
+)
+```
+
+Retrieve trajectory:
+
+```python
+if plan_result:
+
+    trajectory = plan_result.trajectory
+```
+
+Inspect:
+
+```python
+print(len(trajectory))
+print(trajectory.duration)
+
+for i in range(len(trajectory)):
+
+    waypoint = trajectory[i]
+
+    positions = \
+        waypoint.get_joint_group_positions(
+            "ur_manipulator"
+        )
+
+    print(positions)
+```
+
+Execute:
+
+```python
+execution_result = moveit.execute(
+    trajectory,
+    controllers=[]
+)
+```
+
+Planning Scene:
+
+```python
+planning_scene_monitor = \
+    moveit.get_planning_scene_monitor()
+```
+
+Add collision object:
+
+```python
+with planning_scene_monitor.read_write() as scene:
+
+    scene.apply_collision_object(
+        collision_object
+    )
+```
+
+Collision check:
+
+```python
+with planning_scene_monitor.read_only() as scene:
+
+    collision_result = scene.is_state_colliding(
+        robot_state=current_state,
+        joint_model_group_name="ur_manipulator"
+    )
+```
+
+---
+
+# 4.39 What We Achieved in Stage 4
+
+By the end of Stage 4 we successfully learned and tested:
+
+```text
+✓ What MoveIt 2 is
+
+✓ Why MoveIt is needed
+
+✓ Difference between direct controller commands and planning
+
+✓ Robot model
+
+✓ RobotState
+
+✓ Planning groups
+
+✓ ur_manipulator
+
+✓ MoveItPy
+
+✓ Read current robot state
+
+✓ Create joint-space goal state
+
+✓ OMPL planning pipeline
+
+✓ RRTConnect planner
+
+✓ Plan without executing
+
+✓ RobotTrajectory
+
+✓ Inspect generated waypoints
+
+✓ Understand path vs trajectory
+
+✓ Time parameterization
+
+✓ Execute MoveIt trajectory
+
+✓ Automatic controller selection
+
+✓ scaled_joint_trajectory_controller
+
+✓ MoveIt → ros2_control communication
+
+✓ Planning Scene
+
+✓ Collision objects
+
+✓ Direct collision checking
+
+✓ Valid vs invalid RobotState
+
+✓ Collision-aware planning
+
+✓ Planning around an environment obstacle
+```
+
+---
+
+# Stage 4 Final Architecture
+
+```text
+                 /joint_states
+                      ↑
+                      │
+Gazebo UR5e ← ros2_control
+     ↑                │
+     │                │
+scaled_joint_trajectory_controller
+     ↑
+     │
+Trajectory Execution Manager
+     ↑
+     │
+RobotTrajectory
+     ↑
+     │
+OMPL / RRTConnect
+     ↑
+     │
+Collision Checking
+     ↑
+     │
+Planning Scene
+     ↑
+     │
+Robot Model + RobotState
+     ↑
+     │
+MoveItPy
+     ↑
+     │
+Our Python program
+```
+
+Stage 4 therefore moved us from:
+
+```text
+"Tell every joint exactly how to move"
+```
+
+to:
+
+```text
+"Tell MoveIt what configuration we want,
+and let it find a valid motion."
+```
+
+---
+
+# Next: Stage 5
+
+Stage 5 changes the way we think about controlling the robot again.
+
+Instead of:
+
+```text
+shoulder_pan = 0.3
+shoulder_lift = -1.3
+elbow = -0.3
+...
+```
+
+we will begin working with:
+
+```text
+End-effector position:
+
+X
+Y
+Z
+```
+
+and orientation.
+
+Main Stage 5 topics:
+
+```text
+5A Coordinate frames
+
+5B End-effector pose
+
+5C Forward Kinematics
+
+5D Read end-effector XYZ
+
+5E Inverse Kinematics
+
+5F XYZ / pose targets
+
+5G IK → joint configuration
+
+5H MoveIt planning using that solution
+
+5I Execute end-effector motion
+```
